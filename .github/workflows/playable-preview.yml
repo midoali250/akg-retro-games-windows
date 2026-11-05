@@ -50,7 +50,7 @@ jobs:
       - name: Build portable application
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name AKG-Retro-Games --icon assets/platform-icons/retro-collection.ico --add-data 'assets;assets' --add-data 'drive-index.json;.' --add-data 'NOTICE.md;.' --add-data 'cheats;cheats' --add-data 'package-cores;cores' --add-data 'package-roms;roms' --add-data 'thumbnails;thumbnails' --add-data 'third-party-notices;third-party-notices' launcher.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name AKG-Retro-Games --icon assets/platform-icons/retro-collection.ico --add-data 'updates/public-key.json;updates' --add-data 'assets;assets' --add-data 'drive-index.json;.' --add-data 'NOTICE.md;.' --add-data 'cheats;cheats' --add-data 'package-cores;cores' --add-data 'package-roms;roms' --add-data 'thumbnails;thumbnails' --add-data 'third-party-notices;third-party-notices' launcher.py
           if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
       - name: Smoke test packaged sessions
         shell: pwsh

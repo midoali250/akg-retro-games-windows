@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/midoali250/bitvault-engine",
-  "commit": "2f34737533070b4f4dad6e869524fd6c5ca1968b",
+  "commit": "30491cb1b6f46f0717f5fa6c3fee462a78c32e9c",
   "registry": "engine/cores/registry.json",
   "systems": [
     "NES",
     "SNES"
   ],
-  "status": "experimental-build-probe"
+  "status": "controller-mapping-and-reset"
 }

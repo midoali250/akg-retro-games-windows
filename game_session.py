@@ -4,6 +4,7 @@ from pathlib import Path
 import pygame
 from libretro_host import LibretroHost
 from preferences import read_preferences, write_preferences
+from controls import input_bits, read_controls, control_screen, scan_gamepads
 
 KEYS={pygame.K_z:0,pygame.K_a:1,pygame.K_RSHIFT:2,pygame.K_RETURN:3,
       pygame.K_UP:4,pygame.K_DOWN:5,pygame.K_LEFT:6,pygame.K_RIGHT:7,
@@ -25,37 +26,12 @@ def fit_frame(frame_size, screen_size):
     w=max(1,min(sw,round(fw*scale)));h=max(1,min(sh,round(fh*scale)))
     return pygame.Rect((sw-w)//2,(sh-h)//2,w,h)
 
-def input_bits(joysticks):
-    pressed=pygame.key.get_pressed();bits={b for k,b in KEYS.items() if pressed[k]}
-    for j in joysticks:
-        try:
-            if not j.get_init():continue
-            for n,bit in [(0,8),(1,0),(2,9),(3,1),(4,10),(5,11),(6,2),(7,3)]:
-                if n<j.get_numbuttons() and j.get_button(n):bits.add(bit)
-            if j.get_numhats():
-                x,y=j.get_hat(0)
-                if x<0:bits.add(6)
-                if x>0:bits.add(7)
-                if y>0:bits.add(4)
-                if y<0:bits.add(5)
-            if j.get_numaxes()>=2:
-                x,y=j.get_axis(0),j.get_axis(1)
-                if x<-.35:bits.add(6)
-                if x>.35:bits.add(7)
-                if y<-.35:bits.add(4)
-                if y>.35:bits.add(5)
-        except pygame.error:continue
-    return bits
-
 def menu_next(index,delta,total):
     return (index+delta)%total if total else 0
 
 def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_manual=False, display_mode='FIT', verified_cheats=None):
     """Run one game with selectable settings, explicit state slots and verified cheats."""
-    joysticks=[]
-    for i in range(pygame.joystick.get_count()):
-        try:j=pygame.joystick.Joystick(i);j.init();joysticks.append(j)
-        except pygame.error:pass
+    joysticks=scan_gamepads();control_config=read_controls()
     preferences=read_preferences();scaling=preferences['scaling'];persisted_display=display_mode;persisted_scaling=scaling
     count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;selected=0;cheat_menu=False;cheat_selected=0;active=set();overlay_tested=False;overlay_changed=False;cheat_probe_started=False;cheat_toggles=0;slot=0
     entries=verified_cheats or []
@@ -74,7 +50,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
             except (OSError,RuntimeError,ValueError) as err:notice='Save/load failed: '+str(err)[:70]
             until=time.monotonic()+3
         def activate(row):
-            nonlocal display_mode,scaling,slot,menu,cheat_menu,notice,until,cheat_selected
+            nonlocal display_mode,scaling,slot,menu,cheat_menu,notice,until,cheat_selected,control_config,joysticks
             if row==0:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
             elif row==1:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP'
             elif row==2:slot=(slot+1)%4
@@ -84,6 +60,9 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
             elif row==6:menu=False
             elif row==7:return 'menu'
             elif row==8:return 'quit'
+            elif row==9:
+                result=control_screen(screen);control_config=read_controls();joysticks=scan_gamepads()
+                if result=='quit':return 'quit'
             return None
         def toggle_cheat(index):
             nonlocal notice,until,cheat_toggles
@@ -100,9 +79,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
             action=None
             for e in pygame.event.get():
                 if e.type==pygame.QUIT:return 'quit'
-                if e.type==pygame.JOYDEVICEADDED:
-                    try:j=pygame.joystick.Joystick(e.device_index);j.init();joysticks.append(j)
-                    except pygame.error:pass
+                if e.type in (pygame.JOYDEVICEADDED,pygame.JOYDEVICEREMOVED):joysticks=scan_gamepads()
                 if e.type==pygame.MOUSEBUTTONDOWN and e.button==1:
                     gear_size=max(42,int(screen.get_height()*.065));gear_hit=pygame.Rect(screen.get_width()-gear_size-10,10,gear_size,gear_size)
                     if gear_hit.collidepoint(e.pos):menu=not menu;cheat_menu=False
@@ -111,7 +88,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                         if 340<=x<=940:
                             row=int((y-205)//36)
                             if cheat_menu and 0<=row<min(len(entries),7):cheat_selected=row;toggle_cheat(row)
-                            elif not cheat_menu and 0<=row<9:selected=row;action=activate(selected)
+                            elif not cheat_menu and 0<=row<10:selected=row;action=activate(selected)
                 if e.type==pygame.KEYDOWN:
                     if e.key==pygame.K_g:menu=not menu;cheat_menu=False;continue
                     if e.key==pygame.K_ESCAPE:
@@ -122,7 +99,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                         if e.key in (pygame.K_DOWN,pygame.K_UP):
                             delta=1 if e.key==pygame.K_DOWN else -1
                             if cheat_menu:cheat_selected=menu_next(cheat_selected,delta,min(len(entries),7))
-                            else:selected=menu_next(selected,delta,9)
+                            else:selected=menu_next(selected,delta,10)
                             continue
                         if e.key in (pygame.K_RETURN,pygame.K_SPACE):
                             if cheat_menu:toggle_cheat(cheat_selected)
@@ -136,7 +113,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                 if menu and e.type==pygame.JOYHATMOTION and e.value[1]:
                     delta=-1 if e.value[1]>0 else 1
                     if cheat_menu:cheat_selected=menu_next(cheat_selected,delta,min(len(entries),7))
-                    else:selected=menu_next(selected,delta,9)
+                    else:selected=menu_next(selected,delta,10)
                 if menu and e.type==pygame.JOYBUTTONDOWN and e.button==0:
                     if cheat_menu:toggle_cheat(cheat_selected)
                     else:action=activate(selected)
@@ -145,7 +122,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                 preferences.update({'display_mode':display_mode,'scaling':scaling})
                 try:write_preferences(preferences);persisted_display=display_mode;persisted_scaling=scaling
                 except OSError:notice='Could not save settings on this device';until=time.monotonic()+3;persisted_display=display_mode;persisted_scaling=scaling
-            core.buttons=input_bits(joysticks) if not menu else set()
+            core.buttons=input_bits(joysticks,control_config) if not menu else set()
             if not menu:core.run_frame();count+=1
             if test_manual and count==3 and not overlay_tested:
                 overlay_tested=True
@@ -181,7 +158,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                     if not lines:lines=['No verified cheats for this exact game.']
                     choice=cheat_selected if entries else -1
                 else:
-                    lines=['Display: '+display_mode+' [D]','Filter: '+scaling+' [S]','Manual slot: '+str(slot+1)+' [1-4]','Save state [F5]','Load state [F8]','Cheats ('+str(len(entries))+')','Resume game','Back to game list','Exit application'];choice=selected
+                    lines=['Display: '+display_mode+' [D]','Filter: '+scaling+' [S]','Manual slot: '+str(slot+1)+' [1-4]','Save state [F5]','Load state [F8]','Cheats ('+str(len(entries))+')','Resume game','Back to game list','Exit application','Controller / keyboard setup'];choice=selected
                 for i,text in enumerate(lines):
                     r=rect(340,205+i*36,600,32)
                     if i==choice:

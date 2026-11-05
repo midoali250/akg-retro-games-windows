@@ -4,6 +4,7 @@ from pathlib import Path
 import pygame
 from library import load_catalog, filter_catalog
 from preferences import read_preferences, write_preferences
+from controls import control_screen, reset_application, scan_gamepads
 
 ROOT=Path(__file__).resolve().parent
 CATEGORIES=['ALL','FAVORITES']
@@ -46,7 +47,7 @@ def textfit(font,text,maxwidth):
         text=text[:-1]
     return text
 
-def render(screen, games, category, query, chosen, favorites, status, about=False, settings=False, display_mode='FIT', update_ready=False):
+def render(screen, games, category, query, chosen, favorites, status, about=False, settings=False, display_mode='FIT', update_ready=False, reset_confirm=False):
     w,h=screen.get_size();sx=w/1280;sy=h/720
     def pos(x,y):return (round(x*sx),round(y*sy))
     def rect(x,y,ww,hh):return pygame.Rect(round(x*sx),round(y*sy),max(1,round(ww*sx)),max(1,round(hh*sy)))
@@ -113,9 +114,20 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
         shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((2,6,18,220));screen.blit(shade,(0,0))
         pygame.draw.rect(screen,(18,29,52),rect(250,150,780,420),border_radius=14)
         label('SETTINGS',285,180,(120,225,238),big)
-        label('Display mode: '+display_mode,285,260,(225,235,245),body)
-        label('Press D to switch: FIT 4:3 / FULL STRETCH',285,305,(200,220,235),body)
-        label('G or ESC closes settings. Changes apply to the next game.',285,365,(200,220,235),body)
+        for y in (235,295,355,415):pygame.draw.rect(screen,(34,72,101),rect(285,y,710,48),border_radius=7)
+        label('DISPLAY: '+display_mode+'  [D]',300,247,(225,235,245),body)
+        label('CONTROLLER / KEYBOARD SETUP  [C]',300,307,(225,235,245),body)
+        label('RESET ENTIRE APP  [R]',300,367,(255,210,180),body)
+        label('BACK  [G / ESC]',300,427,(225,235,245),body)
+        if reset_confirm:
+            shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((2,6,18,235));screen.blit(shade,(0,0))
+            pygame.draw.rect(screen,(50,27,42),rect(210,175,860,370),border_radius=14)
+            label('RESET ALL APP DATA?',245,205,(255,170,150),big)
+            label('This permanently deletes settings, controller mappings,',245,270,(240,225,220),body)
+            label('favorites and ALL manual game saves. Cannot be undone.',245,300,(240,225,220),body)
+            label('Bundled games and downloaded update files remain.',245,330,(220,220,230),body)
+            pygame.draw.rect(screen,(125,55,55),rect(245,405,350,60),border_radius=7);label('DELETE ALL  [Y]',260,422,(255,245,240),body)
+            pygame.draw.rect(screen,(40,77,100),rect(625,405,350,60),border_radius=7);label('CANCEL  [N / ESC]',640,422,(230,245,255),body)
     if about:
         shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((2,6,18,218));screen.blit(shade,(0,0))
         panel=rect(170,95,940,520);pygame.draw.rect(screen,(18,29,52),panel,border_radius=14);pygame.draw.rect(screen,(83,167,195),panel,width=2,border_radius=14)
@@ -131,7 +143,7 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
         label('Click anywhere, or press I or ESC to return',205,575,(113,206,224),small)
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--verify-update-key',action='store_true',help=argparse.SUPPRESS);p.add_argument('--screenshot');p.add_argument('--rom-dir',default=str(ROOT/'roms'));p.add_argument('--cores-dir',default=str(ROOT/'cores'));p.add_argument('--ci-game-id',help=argparse.SUPPRESS);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--ci-controls-test',action='store_true',help=argparse.SUPPRESS);p.add_argument('--verify-update-key',action='store_true',help=argparse.SUPPRESS);p.add_argument('--screenshot');p.add_argument('--rom-dir',default=str(ROOT/'roms'));p.add_argument('--cores-dir',default=str(ROOT/'cores'));p.add_argument('--ci-game-id',help=argparse.SUPPRESS);args=p.parse_args()
     if args.verify_update_key:
         if not args.smoke:raise ValueError('Key verification test requires smoke mode')
         platform={'win32':'windows','darwin':'macos','linux':'linux'}.get(sys.platform)
@@ -140,8 +152,25 @@ def main():
         load_version(ROOT)
     pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('AKG Retro Games — preview')
     pygame.display.set_icon(pygame.image.load(str(ROOT/'assets/app-icon.png')))
+    if args.ci_controls_test:
+        if not args.smoke:raise ValueError('Control test requires smoke mode')
+        import tempfile,controls
+        with tempfile.TemporaryDirectory(prefix='akg-controls-ci-') as tmp:
+            original=controls.data_dir;controls.data_dir=lambda:Path(tmp)/'private-data'
+            try:
+                pygame.event.clear()
+                pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN,button=1,pos=(500,200)))
+                pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_t))
+                pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_ESCAPE))
+                controls.control_screen(screen)
+                if controls.read_controls()['keyboard'].get('4')!=pygame.K_t:raise AssertionError('Packaged keyboard assignment failed')
+                saves=controls.data_dir()/'manual-saves';saves.mkdir();(saves/'test.state').write_text('test')
+                controls.reset_application()
+                if controls.data_dir().exists():raise AssertionError('Packaged application data reset failed')
+            finally:controls.data_dir=original
+        pygame.quit();return
     preferences=read_preferences();saved_preferences=preferences.copy()
-    all_games=load_catalog(ROOT/'drive-index.json');favorites=set(preferences['favorites']);cat=0;query='';chosen=0;search=False;about=False;settings=False;display_mode=preferences['display_mode']; joysticks=[]; status='Experimental build — game support is being tested';running=True;clock=pygame.time.Clock()
+    all_games=load_catalog(ROOT/'drive-index.json');favorites=set(preferences['favorites']);cat=0;query='';chosen=0;search=False;about=False;settings=False;reset_confirm=False;display_mode=preferences['display_mode']; joysticks=[]; status='Experimental build — game support is being tested';running=True;clock=pygame.time.Clock()
     if args.ci_game_id:
         if not args.smoke:raise ValueError('CI game test requires smoke mode')
         from launch_game import launch_game
@@ -162,10 +191,7 @@ def main():
         except Exception as err:update_queue.put((action,None,str(err)))
     if not args.smoke and update_platform:
         update_busy=True;threading.Thread(target=update_worker,args=('check',),daemon=True).start()
-    for n in range(pygame.joystick.get_count()):
-        try:
-            j=pygame.joystick.Joystick(n);j.init();joysticks.append(j)
-        except pygame.error:pass
+    joysticks=scan_gamepads()
     while running:
         games=filter_catalog(all_games,CATEGORIES[cat],query,favorites);chosen=min(chosen,max(0,len(games)-1))
         while not update_queue.empty():
@@ -177,10 +203,7 @@ def main():
             else:status='Verified update downloaded: '+str(result)+' — open it to install'
         for event in pygame.event.get():
             if event.type==pygame.QUIT:running=False
-            if event.type==pygame.JOYDEVICEADDED:
-                try:
-                    j=pygame.joystick.Joystick(event.device_index);j.init();joysticks.append(j)
-                except pygame.error:pass
+            if event.type in (pygame.JOYDEVICEADDED,pygame.JOYDEVICEREMOVED):joysticks=scan_gamepads()
             if not about and not settings and not search and event.type==pygame.MOUSEWHEEL:
                 chosen=scroll_selection(chosen,event.y,len(games))
             if not about and not settings and not search and event.type==pygame.MOUSEBUTTONDOWN and event.button in (4,5):
@@ -193,7 +216,20 @@ def main():
             if not about and event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
                 sw,sh=screen.get_size();mx=event.pos[0]*1280/sw;my=event.pos[1]*720/sh
                 if settings:
-                    if 250<=mx<=1030 and 250<=my<=340:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
+                    if reset_confirm:
+                        if 245<=mx<=595 and 405<=my<=465:
+                            try:
+                                reset_application();preferences=read_preferences();saved_preferences=preferences.copy();favorites.clear();display_mode=preferences['display_mode'];cat=0;query='';chosen=0;status='App data reset. Bundled games remain.';reset_confirm=False;settings=False
+                            except OSError as err:status='Reset failed: '+str(err)[:80];reset_confirm=False;settings=False
+                        elif 625<=mx<=975 and 405<=my<=465:reset_confirm=False
+                        continue
+                    if 285<=mx<=995:
+                        if 235<=my<=283:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
+                        elif 295<=my<=343:
+                            if control_screen(screen)=='quit':running=False
+                            joysticks=scan_gamepads()
+                        elif 355<=my<=403:reset_confirm=True
+                        elif 415<=my<=463:settings=False
                     continue
                 if about_button_hit(mx,my):
                     about=True;continue
@@ -218,8 +254,18 @@ def main():
                     if x<=mx<=x+218 and y<=my<=y+172 and idx<len(games):chosen=idx
             if event.type==pygame.KEYDOWN:
                 if settings:
-                    if event.key in (pygame.K_ESCAPE,pygame.K_g):settings=False
+                    if reset_confirm:
+                        if event.key in (pygame.K_ESCAPE,pygame.K_n):reset_confirm=False
+                        elif event.key==pygame.K_y:
+                            try:
+                                reset_application();preferences=read_preferences();saved_preferences=preferences.copy();favorites.clear();display_mode=preferences['display_mode'];cat=0;query='';chosen=0;status='App data reset. Bundled games remain.';reset_confirm=False;settings=False
+                            except OSError as err:status='Reset failed: '+str(err)[:80];reset_confirm=False;settings=False
+                    elif event.key in (pygame.K_ESCAPE,pygame.K_g):settings=False
                     elif event.key==pygame.K_d:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
+                    elif event.key==pygame.K_c:
+                        if control_screen(screen)=='quit':running=False
+                        joysticks=scan_gamepads()
+                    elif event.key==pygame.K_r:reset_confirm=True
                 elif about:
                     if event.key in (pygame.K_ESCAPE,pygame.K_i):about=False
                 elif search:
@@ -255,7 +301,7 @@ def main():
         if preferences!=saved_preferences and not args.smoke:
             try:write_preferences(preferences);saved_preferences=preferences.copy()
             except OSError:status='Could not save settings on this device';saved_preferences=preferences.copy()
-        render(screen,games,CATEGORIES[cat],query,chosen,favorites,status,about,settings,display_mode,update_manifest is not None);pygame.display.flip()
+        render(screen,games,CATEGORIES[cat],query,chosen,favorites,status,about,settings,display_mode,update_manifest is not None,reset_confirm);pygame.display.flip()
         if args.screenshot:pygame.image.save(screen,args.screenshot)
         if args.smoke:running=False
         clock.tick(60)

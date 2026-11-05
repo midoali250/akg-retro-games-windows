@@ -2,7 +2,7 @@ name: Build Windows playable preview
 on:
   push:
     branches: [main]
-    paths: ['updates/version.json', 'updates/public-key.json', 'launcher.py', 'launch_game.py', 'libretro_host.py', 'game_session.py', 'scripts/**', '.github/workflows/playable-preview.yml']
+    paths: ['updates/version.json', 'updates/public-key.json', 'launcher.py', 'controls.py', 'engine-reference.json', 'launch_game.py', 'libretro_host.py', 'game_session.py', 'scripts/**', '.github/workflows/playable-preview.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,13 +15,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: midoali250/bitvault-engine
-          ref: 2f34737533070b4f4dad6e869524fd6c5ca1968b
+          ref: 30491cb1b6f46f0717f5fa6c3fee462a78c32e9c
           path: engine-source
           sparse-checkout: engine/desktop
       - name: Use pinned shared BitVault frontend
         shell: bash
         run: |
-          cp engine-source/engine/desktop/{launcher.py,library.py,game_session.py,launch_game.py,libretro_host.py,preferences.py,github_update.py,signed_updates.py} .
+          cp engine-source/engine/desktop/{launcher.py,library.py,game_session.py,launch_game.py,libretro_host.py,preferences.py,controls.py,github_update.py,signed_updates.py} .
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -57,7 +57,7 @@ jobs:
         run: |
           $env:SDL_VIDEODRIVER='dummy'; $env:SDL_AUDIODRIVER='dummy'
           $env:USERPROFILE=Join-Path $env:RUNNER_TEMP 'akg-test-home'; New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
-          foreach ($argsLine in @('--smoke --verify-update-key','--smoke --verify-update-key --ci-game-id 1TuDbnOzqjx3Z0WKKuc3zkRrLAR7F_pwf','--smoke --verify-update-key --ci-game-id 1RW03OkSJ_ZC4fCc2fT84rtUGwqmng0dT')) {
+          foreach ($argsLine in @('--smoke --ci-controls-test','--smoke --verify-update-key','--smoke --verify-update-key --ci-game-id 1TuDbnOzqjx3Z0WKKuc3zkRrLAR7F_pwf','--smoke --verify-update-key --ci-game-id 1RW03OkSJ_ZC4fCc2fT84rtUGwqmng0dT')) {
             $proc=Start-Process -Wait -PassThru -FilePath 'dist/AKG-Retro-Games.exe' -ArgumentList $argsLine
             if ($proc.ExitCode -ne 0) { exit $proc.ExitCode }
           }

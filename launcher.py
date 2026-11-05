@@ -7,6 +7,18 @@ from library import load_catalog, filter_catalog
 ROOT=Path(__file__).resolve().parent
 CATEGORIES=['ALL','FAVORITES']
 THUMB_CACHE={}
+BACKGROUND_CACHE={}
+
+def scroll_selection(chosen, wheel_y, count):
+    """Scroll one row at a time without leaving the filtered game list."""
+    return max(0,min(max(0,count-1),chosen-int(wheel_y)*3))
+
+def background(size):
+    if size not in BACKGROUND_CACHE:
+        try:BACKGROUND_CACHE[size]=pygame.transform.smoothscale(pygame.image.load(str(ROOT/'assets/menu-background.png')).convert(),size)
+        except (pygame.error,FileNotFoundError):BACKGROUND_CACHE[size]=None
+    return BACKGROUND_CACHE[size]
+
 
 def thumbnail(source_id):
     if source_id not in THUMB_CACHE:
@@ -25,15 +37,10 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
     w,h=screen.get_size();sx=w/1280;sy=h/720
     def pos(x,y):return (round(x*sx),round(y*sy))
     def rect(x,y,ww,hh):return pygame.Rect(round(x*sx),round(y*sy),max(1,round(ww*sx)),max(1,round(hh*sy)))
-    base=pygame.Surface((1,h))
-    for y in range(h):
-        t=y/max(1,h-1);base.set_at((0,y),(int(10+5*t),int(17+3*t),int(43+13*t)))
-    screen.blit(pygame.transform.scale(base,(w,h)),(0,0))
-    halo=pygame.Surface((w,h),pygame.SRCALPHA)
-    pygame.draw.ellipse(halo,(36,115,185,25),rect(270,-300,780,700));pygame.draw.ellipse(halo,(119,60,190,19),rect(700,-200,600,500));screen.blit(halo,(0,0))
-    rng=random.Random(711)
-    for _ in range(110):
-        x,y=rng.randrange(w),rng.randrange(h);screen.set_at((x,y),(60,85,121))
+    backdrop=background((w,h))
+    if backdrop:screen.blit(backdrop,(0,0))
+    else:screen.fill((10,17,43))
+    shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((4,8,25,90));screen.blit(shade,(0,0))
     font=lambda n:pygame.font.SysFont('dejavusans',max(11,int(n*min(sx,sy))))
     big=font(30);small=font(13);body=font(17);tiny=font(11)
     def label(txt,x,y,color=(200,220,240),f=body):screen.blit(f.render(txt,True,color),pos(x,y))
@@ -50,7 +57,16 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
     for index,g in enumerate(games[page*6:page*6+6],start=page*6):
         n=index-page*6;x=250+(n%3)*240;y=200+(n//3)*194;box=rect(x,y,218,172)
         pygame.draw.rect(screen,(16,29,52),box,border_radius=12)
-        pygame.draw.rect(screen,(67,220,234) if index==chosen else (48,66,99),box,width=max(1,int(2*min(sx,sy))),border_radius=12)
+        if index==chosen:
+            # Bounded glow surface avoids allocating a full 4K overlay per card.
+            spread=max(3,int(14*min(sx,sy)))
+            glow=pygame.Surface((box.width+spread*2,box.height+spread*2),pygame.SRCALPHA)
+            basebox=pygame.Rect(spread,spread,box.width,box.height)
+            for pad,alpha in [(12,18),(8,28),(4,50)]:
+                margin=max(1,int(pad*min(sx,sy)))
+                pygame.draw.rect(glow,(25,195,255,alpha),basebox.inflate(margin*2,margin*2),width=max(2,int(3*min(sx,sy))),border_radius=max(5,int(15*min(sx,sy))))
+            screen.blit(glow,(box.x-spread,box.y-spread))
+        pygame.draw.rect(screen,(86,230,255) if index==chosen else (80,108,145),box,width=max(1,int(3*min(sx,sy))),border_radius=max(5,int(12*min(sx,sy))))
         banner=rect(x+8,y+8,202,95);colors=[(35,80,101),(42,60,110),(65,51,106),(35,76,80),(56,57,99),(48,63,92)];pygame.draw.rect(screen,colors[index%len(colors)],banner,border_radius=8)
         img=thumbnail(g['id'])
         if img:
@@ -120,6 +136,10 @@ def main():
                 try:
                     j=pygame.joystick.Joystick(event.device_index);j.init();joysticks.append(j)
                 except pygame.error:pass
+            if not about and not settings and not search and event.type==pygame.MOUSEWHEEL:
+                chosen=scroll_selection(chosen,event.y,len(games))
+            if not about and not settings and not search and event.type==pygame.MOUSEBUTTONDOWN and event.button in (4,5):
+                chosen=scroll_selection(chosen,1 if event.button==4 else -1,len(games))
             if not about and not settings and event.type==pygame.JOYHATMOTION:
                 dx,dy=event.value
                 chosen=max(0,min(max(0,len(games)-1),chosen+dx-3*dy))

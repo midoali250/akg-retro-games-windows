@@ -52,7 +52,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
     for i in range(pygame.joystick.get_count()):
         try:j=pygame.joystick.Joystick(i);j.init();joysticks.append(j)
         except pygame.error:pass
-    count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;overlay_tested=False;overlay_changed=False
+    count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;overlay_tested=False;overlay_changed=False;slot=0;scaling='SHARP'
     with LibretroHost(core_path,rom_path) as core:
         try:
             pygame.mixer.quit();pygame.mixer.init(frequency=int(core.sample_rate) if 8000<=core.sample_rate<=192000 else 44100,size=-16,channels=2,buffer=512);sound=pygame.mixer.Channel(0)
@@ -70,18 +70,24 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                     if gear_hit.collidepoint(e.pos):menu=not menu
                     elif menu:
                         sw,sh=screen.get_size();x,y=e.pos[0]*1280/sw,e.pos[1]*720/sh
-                        if 360<=x<=920 and 250<=y<=300:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
-                        elif 360<=x<=920 and 310<=y<=360:
+                        if 360<=x<=920 and 220<=y<=260:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
+                        elif 360<=x<=920 and 265<=y<=310:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP'
+                        elif 360<=x<=920 and 350<=y<=395:
                             try:core.save_state(state);notice='Saved manually'
                             except (OSError,RuntimeError,ValueError) as err:notice='Save failed: '+str(err)[:70]
                             until=time.monotonic()+3
-                        elif 360<=x<=920 and 370<=y<=420:
+                        elif 360<=x<=920 and 400<=y<=445:
                             try:core.load_state(state);notice='Loaded manual save'
                             except (OSError,RuntimeError,ValueError) as err:notice='Load failed: '+str(err)[:70]
                             until=time.monotonic()+3
                 if e.type==pygame.KEYDOWN:
                     if e.key==pygame.K_g:menu=not menu;continue
                     if menu and e.key==pygame.K_d:display_mode='STRETCH' if display_mode=='FIT' else 'FIT';overlay_changed=True;continue
+                    if menu and e.key==pygame.K_s:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP';continue
+                    if menu and e.key in (pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4):
+                        slot=e.key-pygame.K_1
+                        state=Path(state_dir)/(core.game_hash+('.state' if slot==0 else '.slot'+str(slot+1)+'.state'))
+                        notice='Manual slot '+str(slot+1);until=time.monotonic()+3;continue
                     if e.key==pygame.K_ESCAPE:
                         if menu:menu=False;continue
                         return 'menu'
@@ -107,7 +113,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                 # 4:3 console display framing or explicit full-screen stretch; neither crops.
                 target=screen.get_rect() if display_mode=='STRETCH' else fit_frame((4,3),screen.get_size())
                 screen.fill((0,0,0))
-                screen.blit(pygame.transform.scale(frame,target.size),target.topleft)
+                screen.blit((pygame.transform.smoothscale if scaling=='SMOOTH' else pygame.transform.scale)(frame,target.size),target.topleft)
             # In-game gear is clickable; G opens the same menu.
             size=max(42,int(screen.get_height()*.065));gear=pygame.Rect(screen.get_width()-size-10,10,size,size)
             pygame.draw.rect(screen,(22,44,70),gear,border_radius=8)
@@ -122,7 +128,7 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                 panel=pygame.Rect(round(330*sw/1280),round(130*sh/720),round(620*sw/1280),round(420*sh/720))
                 pygame.draw.rect(screen,(20,37,60),panel,border_radius=12)
                 font=pygame.font.SysFont('dejavusans',max(17,int(22*scale)))
-                lines=[(175,'GAME SETTINGS'),(260,'DISPLAY: '+display_mode+'  [D]'),(320,'SAVE STATE  [F5]'),(380,'LOAD STATE  [F8]'),(440,'CHEATS: no verified codes for this game'),(500,'G: RESUME   ESC: CLOSE')]
+                lines=[(165,'GAME SETTINGS'),(230,'DISPLAY: '+display_mode+'  [D]'),(275,'FILTER: '+scaling+'  [S]'),(320,'MANUAL SLOT '+str(slot+1)+'  [1-4]'),(365,'SAVE STATE  [F5]'),(410,'LOAD STATE  [F8]'),(455,'CHEATS: no verified codes for this game'),(505,'G: RESUME   ESC: CLOSE')]
                 for yy,txt in lines:screen.blit(font.render(txt,True,(225,235,245)),(round(360*sw/1280),round(yy*sh/720)))
             pcm=core.drain_audio()
             if sound and pcm and (not sound.get_busy() or sound.get_queue() is None):

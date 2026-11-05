@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: midoali250/bitvault-engine
-          ref: d15b63dca260556ab4d7126253fd442cf619cd87
+          ref: 54963141c7c1dc26ece9ba5dc408e15e261ac684
           path: engine-source
           sparse-checkout: engine/desktop
       - name: Use pinned shared BitVault frontend
@@ -50,19 +50,17 @@ jobs:
       - name: Build portable application
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --name AKG-Retro-Games --icon assets/platform-icons/retro-collection.ico --add-data 'assets;assets' --add-data 'drive-index.json;.' --add-data 'NOTICE.md;.' --add-data 'cheats;cheats' --add-data 'package-cores;cores' --add-data 'package-roms;roms' --add-data 'thumbnails;thumbnails' --add-data 'third-party-notices;third-party-notices' launcher.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name AKG-Retro-Games --icon assets/platform-icons/retro-collection.ico --add-data 'assets;assets' --add-data 'drive-index.json;.' --add-data 'NOTICE.md;.' --add-data 'cheats;cheats' --add-data 'package-cores;cores' --add-data 'package-roms;roms' --add-data 'thumbnails;thumbnails' --add-data 'third-party-notices;third-party-notices' launcher.py
           if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
       - name: Smoke test packaged sessions
         shell: pwsh
         run: |
           $env:SDL_VIDEODRIVER='dummy'; $env:SDL_AUDIODRIVER='dummy'
           $env:USERPROFILE=Join-Path $env:RUNNER_TEMP 'akg-test-home'; New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
-          & dist/AKG-Retro-Games.exe --smoke
-          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
-          & dist/AKG-Retro-Games.exe --smoke --ci-game-id 1TuDbnOzqjx3Z0WKKuc3zkRrLAR7F_pwf
-          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
-          & dist/AKG-Retro-Games.exe --smoke --ci-game-id 1RW03OkSJ_ZC4fCc2fT84rtUGwqmng0dT
-          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+          foreach ($argsLine in @('--smoke','--smoke --ci-game-id 1TuDbnOzqjx3Z0WKKuc3zkRrLAR7F_pwf','--smoke --ci-game-id 1RW03OkSJ_ZC4fCc2fT84rtUGwqmng0dT')) {
+            $proc=Start-Process -Wait -PassThru -FilePath 'dist/AKG-Retro-Games.exe' -ArgumentList $argsLine
+            if ($proc.ExitCode -ne 0) { exit $proc.ExitCode }
+          }
       - name: Prepare standalone executable and checksum
         shell: pwsh
         run: |

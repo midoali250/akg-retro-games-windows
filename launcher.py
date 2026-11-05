@@ -41,7 +41,7 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
     backdrop=background((w,h))
     if backdrop:screen.blit(backdrop,(0,0))
     else:screen.fill((10,17,43))
-    shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((4,8,25,90));screen.blit(shade,(0,0))
+    shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((4,8,25,28));screen.blit(shade,(0,0))
     font=lambda n:pygame.font.SysFont('dejavusans',max(11,int(n*min(sx,sy))))
     big=font(30);small=font(13);body=font(17);tiny=font(11)
     def label(txt,x,y,color=(200,220,240),f=body):screen.blit(f.render(txt,True,color),pos(x,y))
@@ -87,6 +87,11 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
         label('Press Enter to play',1005,326,(105,220,230),body)
     pygame.draw.rect(screen,(30,62,91),rect(997,448,210,44),border_radius=8)
     label('SETTINGS  [G]',1010,459,(210,230,245),body)
+    pygame.draw.rect(screen,(30,62,91),rect(997,501,210,44),border_radius=8)
+    label('UPDATES',1010,512,(210,230,245),body)
+    pygame.draw.rect(screen,(62,43,65),rect(997,554,210,44),border_radius=8)
+    label('EXIT',1010,565,(245,220,230),body)
+    label('BACK [Backspace]',50,595,(150,210,230),small)
     pygame.draw.line(screen,(50,65,95),pos(42,637),pos(1238,637),1)
     label('ARROWS / MOUSE    / SEARCH    F FAVORITE    TAB FAVORITES    G SETTINGS    I ABOUT    ESC EXIT',50,657,(151,170,199),small)
     if status:label(status,250,603,(247,190,104),small)
@@ -152,6 +157,12 @@ def main():
                     continue
                 if 997<=mx<=1207 and 448<=my<=492:
                     settings=True;continue
+                if 997<=mx<=1207 and 501<=my<=545:
+                    status='Updates unavailable: secure distribution is not configured';continue
+                if 997<=mx<=1207 and 554<=my<=598:
+                    running=False;continue
+                if 38<=mx<=216 and 585<=my<=625:
+                    cat=0;query='';chosen=0;search=False;status='Back to all games';continue
                 if 38<=mx<=216:
                     for i in range(len(CATEGORIES)):
                         if 210+i*47<=my<=247+i*47:cat=i;chosen=0
@@ -172,6 +183,7 @@ def main():
                     elif event.key==pygame.K_BACKSPACE:query=query[:-1];chosen=0
                     elif event.unicode and event.unicode.isprintable() and len(query)<60:query+=event.unicode;chosen=0
                 elif event.key==pygame.K_ESCAPE:running=False
+                elif event.key==pygame.K_BACKSPACE:cat=0;query='';chosen=0;status='Back to all games'
                 elif event.key==pygame.K_i:about=True
                 elif event.key==pygame.K_g:settings=True
                 elif event.key==pygame.K_SLASH:search=True;query='';chosen=0

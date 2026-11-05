@@ -16,4 +16,4 @@ def launch_game(game,screen,core_dir,rom_dir,state_dir,max_frames=None,test_manu
     if not rom.is_file():raise FileNotFoundError('ROM is not bundled in this preview')
     if not core.is_file():raise FileNotFoundError('emulator core is not bundled in this preview')
     if hashlib.sha256(rom.read_bytes()).hexdigest()!=record['rom_sha256']:raise ValueError('ROM SHA-256 does not match this game')
-    return run_session(screen,core,rom,state_dir,max_frames=max_frames,test_manual=test_manual,display_mode=display_mode)
+    return run_session(screen,core,rom,state_dir,max_frames=max_frames,test_manual=test_manual,display_mode=display_mode,verified_cheats=record.get('verified_cheats',[]))

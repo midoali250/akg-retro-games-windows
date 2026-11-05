@@ -47,58 +47,100 @@ def input_bits(joysticks):
         except pygame.error:continue
     return bits
 
-def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_manual=False, display_mode='FIT'):
-    """Run one game; ESC returns; F5/F8 explicit save/load. No automatic saves."""
+def menu_next(index,delta,total):
+    return (index+delta)%total if total else 0
+
+def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_manual=False, display_mode='FIT', verified_cheats=None):
+    """Run one game with selectable settings, explicit state slots and verified cheats."""
     joysticks=[]
     for i in range(pygame.joystick.get_count()):
         try:j=pygame.joystick.Joystick(i);j.init();joysticks.append(j)
         except pygame.error:pass
     preferences=read_preferences();scaling=preferences['scaling'];persisted_display=display_mode;persisted_scaling=scaling
-    count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;overlay_tested=False;overlay_changed=False;slot=0
+    count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;selected=0;cheat_menu=False;cheat_selected=0;active=set();overlay_tested=False;overlay_changed=False;cheat_probe_started=False;cheat_toggles=0;slot=0
+    entries=verified_cheats or []
     with LibretroHost(core_path,rom_path) as core:
+        for entry in entries:
+            if entry.get('rom_sha256')!=core.game_hash or entry.get('verified') is not True:raise ValueError('unverified or wrong-game cheat')
         try:
             pygame.mixer.quit();pygame.mixer.init(frequency=int(core.sample_rate) if 8000<=core.sample_rate<=192000 else 44100,size=-16,channels=2,buffer=512);sound=pygame.mixer.Channel(0)
         except pygame.error:notice='Audio unavailable on this device';until=time.monotonic()+4
-        state=Path(state_dir)/(core.game_hash+'.state')
+        def state_path(number):return Path(state_dir)/(core.game_hash+('.state' if number==0 else '.slot'+str(number+1)+'.state'))
+        def save_or_load(saving):
+            nonlocal notice,until
+            try:
+                if saving:core.save_state(state_path(slot));notice='Saved slot '+str(slot+1)
+                else:core.load_state(state_path(slot));notice='Loaded slot '+str(slot+1)
+            except (OSError,RuntimeError,ValueError) as err:notice='Save/load failed: '+str(err)[:70]
+            until=time.monotonic()+3
+        def activate(row):
+            nonlocal display_mode,scaling,slot,menu,cheat_menu,notice,until,cheat_selected
+            if row==0:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
+            elif row==1:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP'
+            elif row==2:slot=(slot+1)%4
+            elif row==3:save_or_load(True)
+            elif row==4:save_or_load(False)
+            elif row==5:cheat_menu=True;cheat_selected=0
+            elif row==6:menu=False
+            elif row==7:return 'menu'
+            elif row==8:return 'quit'
+            return None
+        def toggle_cheat(index):
+            nonlocal notice,until,cheat_toggles
+            if index>=len(entries):return
+            candidate=set(active)
+            if index in candidate:candidate.remove(index)
+            else:candidate.add(index)
+            try:
+                core.set_verified_cheats([entries[i] for i in sorted(candidate)])
+                active.clear();active.update(candidate);cheat_toggles+=1;notice='Cheat '+('enabled' if index in active else 'disabled')
+            except (RuntimeError,ValueError) as err:notice='Cheat error: '+str(err)[:60]
+            until=time.monotonic()+3
         while True:
+            action=None
             for e in pygame.event.get():
                 if e.type==pygame.QUIT:return 'quit'
                 if e.type==pygame.JOYDEVICEADDED:
                     try:j=pygame.joystick.Joystick(e.device_index);j.init();joysticks.append(j)
                     except pygame.error:pass
                 if e.type==pygame.MOUSEBUTTONDOWN and e.button==1:
-                    gear_size=max(42,int(screen.get_height()*.065))
-                    gear_hit=pygame.Rect(screen.get_width()-gear_size-10,10,gear_size,gear_size)
-                    if gear_hit.collidepoint(e.pos):menu=not menu
+                    gear_size=max(42,int(screen.get_height()*.065));gear_hit=pygame.Rect(screen.get_width()-gear_size-10,10,gear_size,gear_size)
+                    if gear_hit.collidepoint(e.pos):menu=not menu;cheat_menu=False
                     elif menu:
                         sw,sh=screen.get_size();x,y=e.pos[0]*1280/sw,e.pos[1]*720/sh
-                        if 360<=x<=920 and 220<=y<=260:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
-                        elif 360<=x<=920 and 265<=y<=310:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP'
-                        elif 360<=x<=920 and 350<=y<=395:
-                            try:core.save_state(state);notice='Saved manually'
-                            except (OSError,RuntimeError,ValueError) as err:notice='Save failed: '+str(err)[:70]
-                            until=time.monotonic()+3
-                        elif 360<=x<=920 and 400<=y<=445:
-                            try:core.load_state(state);notice='Loaded manual save'
-                            except (OSError,RuntimeError,ValueError) as err:notice='Load failed: '+str(err)[:70]
-                            until=time.monotonic()+3
+                        if 340<=x<=940:
+                            row=int((y-205)//36)
+                            if cheat_menu and 0<=row<min(len(entries),7):cheat_selected=row;toggle_cheat(row)
+                            elif not cheat_menu and 0<=row<9:selected=row;action=activate(selected)
                 if e.type==pygame.KEYDOWN:
-                    if e.key==pygame.K_g:menu=not menu;continue
-                    if menu and e.key==pygame.K_d:display_mode='STRETCH' if display_mode=='FIT' else 'FIT';overlay_changed=True;continue
-                    if menu and e.key==pygame.K_s:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP';continue
-                    if menu and e.key in (pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4):
-                        slot=e.key-pygame.K_1
-                        state=Path(state_dir)/(core.game_hash+('.state' if slot==0 else '.slot'+str(slot+1)+'.state'))
-                        notice='Manual slot '+str(slot+1);until=time.monotonic()+3;continue
+                    if e.key==pygame.K_g:menu=not menu;cheat_menu=False;continue
                     if e.key==pygame.K_ESCAPE:
+                        if cheat_menu:cheat_menu=False;continue
                         if menu:menu=False;continue
                         return 'menu'
-                    if e.key in (pygame.K_F5,pygame.K_F8):
-                        try:
-                            if e.key==pygame.K_F5:core.save_state(state);notice='Saved manually'
-                            else:core.load_state(state);notice='Loaded manual save'
-                        except (OSError,RuntimeError,ValueError) as err:notice='Save/load failed: '+str(err)[:70]
-                        until=time.monotonic()+3
+                    if menu:
+                        if e.key in (pygame.K_DOWN,pygame.K_UP):
+                            delta=1 if e.key==pygame.K_DOWN else -1
+                            if cheat_menu:cheat_selected=menu_next(cheat_selected,delta,min(len(entries),7))
+                            else:selected=menu_next(selected,delta,9)
+                            continue
+                        if e.key in (pygame.K_RETURN,pygame.K_SPACE):
+                            if cheat_menu:toggle_cheat(cheat_selected)
+                            else:action=activate(selected)
+                            continue
+                        if e.key==pygame.K_d:display_mode='STRETCH' if display_mode=='FIT' else 'FIT';overlay_changed=True;continue
+                        if e.key==pygame.K_s:scaling='SMOOTH' if scaling=='SHARP' else 'SHARP';continue
+                        if e.key in (pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4):slot=e.key-pygame.K_1;notice='Manual slot '+str(slot+1);until=time.monotonic()+3;continue
+                    if e.key==pygame.K_F5:save_or_load(True)
+                    if e.key==pygame.K_F8:save_or_load(False)
+                if menu and e.type==pygame.JOYHATMOTION and e.value[1]:
+                    delta=-1 if e.value[1]>0 else 1
+                    if cheat_menu:cheat_selected=menu_next(cheat_selected,delta,min(len(entries),7))
+                    else:selected=menu_next(selected,delta,9)
+                if menu and e.type==pygame.JOYBUTTONDOWN and e.button==0:
+                    if cheat_menu:toggle_cheat(cheat_selected)
+                    else:action=activate(selected)
+                if action:return action
             if not test_manual and (display_mode!=persisted_display or scaling!=persisted_scaling):
                 preferences.update({'display_mode':display_mode,'scaling':scaling})
                 try:write_preferences(preferences);persisted_display=display_mode;persisted_scaling=scaling
@@ -110,32 +152,42 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                 pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN,button=1,pos=(screen.get_width()-20,20)))
                 pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_d))
                 pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_g))
-            if test_manual and not menu and count==10:core.save_state(state)
-            if test_manual and not menu and count==20:core.load_state(state)
+            if test_manual and entries and count==5 and not cheat_probe_started:
+                cheat_probe_started=True
+                pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_g))
+                for _ in range(5):pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_DOWN))
+                for _ in range(3):pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_RETURN))
+                pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_ESCAPE))
+                pygame.event.post(pygame.event.Event(pygame.KEYDOWN,key=pygame.K_g))
+            if test_manual and not menu and count==10:core.save_state(state_path(slot))
+            if test_manual and not menu and count==20:core.load_state(state_path(slot))
             frame=frame_surface(core)
             if frame:
-                # Fit the full frame without cropping or stretching; add letterboxing.
-                # This is upscaling, not native 4K.
-                # 4:3 console display framing or explicit full-screen stretch; neither crops.
                 target=screen.get_rect() if display_mode=='STRETCH' else fit_frame((4,3),screen.get_size())
-                screen.fill((0,0,0))
-                screen.blit((pygame.transform.smoothscale if scaling=='SMOOTH' else pygame.transform.scale)(frame,target.size),target.topleft)
-            # In-game gear is clickable; G opens the same menu.
+                screen.fill((0,0,0));screen.blit((pygame.transform.smoothscale if scaling=='SMOOTH' else pygame.transform.scale)(frame,target.size),target.topleft)
             size=max(42,int(screen.get_height()*.065));gear=pygame.Rect(screen.get_width()-size-10,10,size,size)
-            pygame.draw.rect(screen,(22,44,70),gear,border_radius=8)
-            cx,cy=gear.center;radius=max(8,size//4)
+            pygame.draw.rect(screen,(22,44,70),gear,border_radius=8);cx,cy=gear.center;radius=max(8,size//4)
             for k in range(8):
-                a=k*math.pi/4
-                pygame.draw.line(screen,(230,245,255),(round(cx+math.cos(a)*radius*.7),round(cy+math.sin(a)*radius*.7)),(round(cx+math.cos(a)*radius*1.3),round(cy+math.sin(a)*radius*1.3)),max(2,size//12))
+                a=k*math.pi/4;pygame.draw.line(screen,(230,245,255),(round(cx+math.cos(a)*radius*.7),round(cy+math.sin(a)*radius*.7)),(round(cx+math.cos(a)*radius*1.3),round(cy+math.sin(a)*radius*1.3)),max(2,size//12))
             pygame.draw.circle(screen,(230,245,255),(cx,cy),radius,max(2,size//12))
             if menu:
-                sw,sh=screen.get_size();scale=min(sw/1280,sh/720)
-                shade=pygame.Surface((sw,sh),pygame.SRCALPHA);shade.fill((0,0,0,190));screen.blit(shade,(0,0))
-                panel=pygame.Rect(round(330*sw/1280),round(130*sh/720),round(620*sw/1280),round(420*sh/720))
-                pygame.draw.rect(screen,(20,37,60),panel,border_radius=12)
-                font=pygame.font.SysFont('dejavusans',max(17,int(22*scale)))
-                lines=[(165,'GAME SETTINGS'),(230,'DISPLAY: '+display_mode+'  [D]'),(275,'FILTER: '+scaling+'  [S]'),(320,'MANUAL SLOT '+str(slot+1)+'  [1-4]'),(365,'SAVE STATE  [F5]'),(410,'LOAD STATE  [F8]'),(455,'CHEATS: no verified codes for this game'),(505,'G: RESUME   ESC: CLOSE')]
-                for yy,txt in lines:screen.blit(font.render(txt,True,(225,235,245)),(round(360*sw/1280),round(yy*sh/720)))
+                sw,sh=screen.get_size();scale=min(sw/1280,sh/720);shade=pygame.Surface((sw,sh),pygame.SRCALPHA);shade.fill((0,0,0,190));screen.blit(shade,(0,0))
+                def rect(x,y,w,h):return pygame.Rect(round(x*sw/1280),round(y*sh/720),round(w*sw/1280),round(h*sh/720))
+                pygame.draw.rect(screen,(20,37,60),rect(310,125,660,495),border_radius=12)
+                font=pygame.font.SysFont('dejavusans',max(16,int(21*scale)));title='CHEATS' if cheat_menu else 'GAME SETTINGS'
+                screen.blit(font.render(title,True,(110,225,255)),rect(345,160,600,30).topleft)
+                if cheat_menu:
+                    lines=[('[ON] ' if i in active else '[OFF] ')+str(e.get('name','Verified cheat'))[:45] for i,e in enumerate(entries[:7])]
+                    if not lines:lines=['No verified cheats for this exact game.']
+                    choice=cheat_selected if entries else -1
+                else:
+                    lines=['Display: '+display_mode+' [D]','Filter: '+scaling+' [S]','Manual slot: '+str(slot+1)+' [1-4]','Save state [F5]','Load state [F8]','Cheats ('+str(len(entries))+')','Resume game','Back to game list','Exit application'];choice=selected
+                for i,text in enumerate(lines):
+                    r=rect(340,205+i*36,600,32)
+                    if i==choice:
+                        pygame.draw.rect(screen,(32,99,132),r,border_radius=6);pygame.draw.rect(screen,(85,230,255),r,width=max(1,int(2*scale)),border_radius=6)
+                    screen.blit(font.render(text,True,(235,245,255)),(r.x+8,r.y+3))
+                screen.blit(font.render('Arrows / Enter / Mouse   ESC: Back',True,(175,200,220)),rect(345,560,600,30).topleft)
             pcm=core.drain_audio()
             if sound and pcm and (not sound.get_busy() or sound.get_queue() is None):
                 try:
@@ -147,7 +199,6 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                 f=pygame.font.SysFont('dejavusans',22);screen.blit(f.render(notice,True,(255,230,160)),(15,15))
             pygame.display.flip()
             if max_frames is not None and count>=max_frames:
-                if test_manual and (not state.exists() or not overlay_changed):raise AssertionError('manual save or settings interaction failed')
+                if test_manual and (not state_path(slot).exists() or not overlay_changed or (entries and cheat_toggles<2)):raise AssertionError('manual save, settings or cheat interaction failed')
                 return 'test-complete'
-            fps=core.fps if 20<=core.fps<=120 else 60
-            clock.tick(fps)
+            clock.tick(core.fps if 20<=core.fps<=120 else 60)

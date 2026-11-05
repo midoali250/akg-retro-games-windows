@@ -2,7 +2,7 @@ name: Build Windows playable preview
 on:
   push:
     branches: [main]
-    paths: ['launcher.py', 'launch_game.py', 'libretro_host.py', 'game_session.py', 'scripts/**', '.github/workflows/playable-preview.yml']
+    paths: ['updates/version.json', 'updates/public-key.json', 'launcher.py', 'launch_game.py', 'libretro_host.py', 'game_session.py', 'scripts/**', '.github/workflows/playable-preview.yml']
   workflow_dispatch:
 permissions:
   contents: read

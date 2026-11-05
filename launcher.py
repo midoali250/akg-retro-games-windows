@@ -1,5 +1,5 @@
 """Experimental desktop collection menu and Linux game selection."""
-import argparse, json, math, os, random
+import argparse, base64, json, math, os, random, sys
 from pathlib import Path
 import pygame
 from library import load_catalog, filter_catalog
@@ -13,6 +13,14 @@ ABOUT_TEXT = ('This application has been developed by Ahmed Kamal Elgandy to ser
 
 def about_button_hit(x,y):
     return 997<=x<=1207 and 395<=y<=439
+
+def verify_packaged_update_key(root, platform):
+    data=json.loads((root/'updates'/'public-key.json').read_text(encoding='utf-8'))
+    if data.get('platform')!=platform or data.get('algorithm')!='Ed25519':raise ValueError('Wrong platform update key')
+    try:key=base64.b64decode(data['public_key_base64'],validate=True)
+    except (ValueError,KeyError,TypeError) as err:raise ValueError('Malformed update public key') from err
+    if len(key)!=32:raise ValueError('Malformed update public key')
+    return key
 
 def scroll_selection(chosen, wheel_y, count):
     """Scroll one row at a time without leaving the filtered game list."""
@@ -123,7 +131,11 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
         label('Click anywhere, or press I or ESC to return',205,575,(113,206,224),small)
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--screenshot');p.add_argument('--rom-dir',default=str(ROOT/'roms'));p.add_argument('--cores-dir',default=str(ROOT/'cores'));p.add_argument('--ci-game-id',help=argparse.SUPPRESS);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--verify-update-key',action='store_true',help=argparse.SUPPRESS);p.add_argument('--screenshot');p.add_argument('--rom-dir',default=str(ROOT/'roms'));p.add_argument('--cores-dir',default=str(ROOT/'cores'));p.add_argument('--ci-game-id',help=argparse.SUPPRESS);args=p.parse_args()
+    if args.verify_update_key:
+        if not args.smoke:raise ValueError('Key verification test requires smoke mode')
+        platform={'win32':'windows','darwin':'macos','linux':'linux'}.get(sys.platform)
+        verify_packaged_update_key(ROOT,platform)
     pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('AKG Retro Games — preview')
     pygame.display.set_icon(pygame.image.load(str(ROOT/'assets/app-icon.png')))
     preferences=read_preferences();saved_preferences=preferences.copy()

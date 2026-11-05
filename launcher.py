@@ -29,7 +29,7 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
     big=font(30);small=font(13);body=font(17);tiny=font(11)
     def label(txt,x,y,color=(200,220,240),f=body):screen.blit(f.render(txt,True,color),pos(x,y))
     icon=pygame.image.load(str(ROOT/'assets/app-icon.png')).convert_alpha();icon=pygame.transform.smoothscale(icon,(int(52*sx),int(52*sy)));screen.blit(icon,pos(48,28))
-    label('RETRO COLLECTION',116,34,(225,235,255),big);label('ONE COLLECTION. ENDLESS ADVENTURES.',118,73,(122,152,193),small)
+    label('AKG RETRO GAMES',116,34,(225,235,255),big);label('ONE COLLECTION. ENDLESS ADVENTURES.',118,73,(122,152,193),small)
     label('BROWSE',50,178,(117,140,178),small)
     for i,cat in enumerate(CATEGORIES):
         y=218+i*47
@@ -72,7 +72,7 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--screenshot');args=p.parse_args()
-    pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('Retro Collection — preview')
+    pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('AKG Retro Games — preview')
     pygame.display.set_icon(pygame.image.load(str(ROOT/'assets/app-icon.png')))
     all_games=load_catalog(ROOT/'drive-index.json');favorites=set();cat=0;query='';chosen=0;search=False;about=False; joysticks=[]; status='Preview only: game execution is not implemented';running=True;clock=pygame.time.Clock()
     for n in range(pygame.joystick.get_count()):

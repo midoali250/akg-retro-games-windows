@@ -1,5 +1,5 @@
 """Experimental desktop collection menu and Linux game selection."""
-import argparse, base64, json, math, os, random, sys
+import argparse, base64, json, math, os, queue, random, sys, threading
 from pathlib import Path
 import pygame
 from library import load_catalog, filter_catalog
@@ -46,7 +46,7 @@ def textfit(font,text,maxwidth):
         text=text[:-1]
     return text
 
-def render(screen, games, category, query, chosen, favorites, status, about=False, settings=False, display_mode='FIT'):
+def render(screen, games, category, query, chosen, favorites, status, about=False, settings=False, display_mode='FIT', update_ready=False):
     w,h=screen.get_size();sx=w/1280;sy=h/720
     def pos(x,y):return (round(x*sx),round(y*sy))
     def rect(x,y,ww,hh):return pygame.Rect(round(x*sx),round(y*sy),max(1,round(ww*sx)),max(1,round(hh*sy)))
@@ -102,12 +102,12 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
     pygame.draw.rect(screen,(30,62,91),rect(997,448,210,44),border_radius=8)
     label('SETTINGS  [G]',1010,459,(210,230,245),body)
     pygame.draw.rect(screen,(30,62,91),rect(997,501,210,44),border_radius=8)
-    label('UPDATES',1010,512,(210,230,245),body)
+    label('DOWNLOAD UPDATE' if update_ready else 'CHECK UPDATES',1010,512,(210,230,245),body)
     pygame.draw.rect(screen,(62,43,65),rect(997,554,210,44),border_radius=8)
     label('EXIT',1010,565,(245,220,230),body)
     label('BACK [Backspace]',50,595,(150,210,230),small)
     pygame.draw.line(screen,(50,65,95),pos(42,637),pos(1238,637),1)
-    label('ARROWS / MOUSE    / SEARCH    F FAVORITE    TAB FAVORITES    G SETTINGS    I ABOUT    ESC EXIT',50,657,(151,170,199),small)
+    label('ARROWS / MOUSE    / SEARCH    F FAVORITE    TAB FAVORITES    G SETTINGS    I ABOUT    U UPDATES    ESC EXIT',50,657,(151,170,199),small)
     if status:label(status,250,603,(247,190,104),small)
     if settings:
         shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((2,6,18,220));screen.blit(shade,(0,0))
@@ -149,12 +149,30 @@ def main():
         pygame.quit()
         if result!='test-complete':raise RuntimeError('CI game session failed')
         return
+    update_platform={'win32':'windows','linux':'linux','darwin':'macos'}.get(sys.platform)
+    update_queue=queue.Queue();update_busy=False;update_manifest=None
+    def update_worker(action,manifest=None):
+        try:
+            from github_update import check,download
+            if action=='check':result=check(update_platform,ROOT)
+            else:result=download(update_platform,manifest,Path.home()/'Downloads'/'AKG-Retro-Games-Updates')
+            update_queue.put((action,result,None))
+        except Exception as err:update_queue.put((action,None,str(err)))
+    if not args.smoke and update_platform:
+        update_busy=True;threading.Thread(target=update_worker,args=('check',),daemon=True).start()
     for n in range(pygame.joystick.get_count()):
         try:
             j=pygame.joystick.Joystick(n);j.init();joysticks.append(j)
         except pygame.error:pass
     while running:
         games=filter_catalog(all_games,CATEGORIES[cat],query,favorites);chosen=min(chosen,max(0,len(games)-1))
+        while not update_queue.empty():
+            action,result,error=update_queue.get_nowait();update_busy=False
+            if error:status='Update error: '+error[:85]
+            elif action=='check':
+                update_manifest=result
+                status='Update available: click UPDATES or press U to download' if result else 'No newer signed update is published'
+            else:status='Verified update downloaded: '+str(result)+' — open it to install'
         for event in pygame.event.get():
             if event.type==pygame.QUIT:running=False
             if event.type==pygame.JOYDEVICEADDED:
@@ -180,7 +198,10 @@ def main():
                 if 997<=mx<=1207 and 448<=my<=492:
                     settings=True;continue
                 if 997<=mx<=1207 and 501<=my<=545:
-                    status='Updates unavailable: secure distribution is not configured';continue
+                    if update_busy:status='Update check or download already running'
+                    else:
+                        action='download' if update_manifest else 'check';update_busy=True;status='Downloading verified update...' if update_manifest else 'Checking for signed updates...';threading.Thread(target=update_worker,args=(action,update_manifest),daemon=True).start()
+                    continue
                 if 997<=mx<=1207 and 554<=my<=598:
                     running=False;continue
                 if 38<=mx<=216 and 585<=my<=625:
@@ -208,6 +229,10 @@ def main():
                 elif event.key==pygame.K_BACKSPACE:cat=0;query='';chosen=0;status='Back to all games'
                 elif event.key==pygame.K_i:about=True
                 elif event.key==pygame.K_g:settings=True
+                elif event.key==pygame.K_u:
+                    if update_busy:status='Update check or download already running'
+                    else:
+                        action='download' if update_manifest else 'check';update_busy=True;status='Downloading verified update...' if update_manifest else 'Checking for signed updates...';threading.Thread(target=update_worker,args=(action,update_manifest),daemon=True).start()
                 elif event.key==pygame.K_SLASH:search=True;query='';chosen=0
                 elif event.key==pygame.K_TAB:cat=(cat+1)%len(CATEGORIES);chosen=0
                 elif event.key==pygame.K_RIGHT:chosen=min(chosen+1,max(0,len(games)-1))
@@ -228,7 +253,7 @@ def main():
         if preferences!=saved_preferences and not args.smoke:
             try:write_preferences(preferences);saved_preferences=preferences.copy()
             except OSError:status='Could not save settings on this device';saved_preferences=preferences.copy()
-        render(screen,games,CATEGORIES[cat],query,chosen,favorites,status,about,settings,display_mode);pygame.display.flip()
+        render(screen,games,CATEGORIES[cat],query,chosen,favorites,status,about,settings,display_mode,update_manifest is not None);pygame.display.flip()
         if args.screenshot:pygame.image.save(screen,args.screenshot)
         if args.smoke:running=False
         clock.tick(60)

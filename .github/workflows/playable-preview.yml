@@ -1,0 +1,64 @@
+name: Build Windows playable preview
+on:
+  push:
+    branches: [main]
+    paths: ['launcher.py', 'launch_game.py', 'libretro_host.py', 'game_session.py', 'scripts/**', '.github/workflows/playable-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make
+            git
+            mingw-w64-x86_64-gcc
+      - name: Verify pinned BitVault Engine registry
+        run: python scripts/verify_engine.py
+      - name: Build native libretro cores
+        shell: msys2 {0}
+        run: bash scripts/build_cores.sh win
+      - name: Download and verify user games
+        run: python scripts/package_roms.py
+      - name: Install dependencies
+        run: python -m pip install pygame==2.6.1 pyinstaller==6.11.1 setuptools==70.3.0
+      - name: Build portable application
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --contents-directory . --name AKG-Retro-Games --icon assets/platform-icons/retro-collection.ico --add-data 'assets;assets' --add-data 'drive-index.json;.' --add-data 'NOTICE.md;.' --add-data 'cheats;cheats' --add-data 'package-cores;cores' --add-data 'package-roms;roms' --add-data 'third-party-notices;third-party-notices' launcher.py
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+      - name: Smoke test packaged sessions
+        shell: pwsh
+        run: |
+          $env:SDL_VIDEODRIVER='dummy'; $env:SDL_AUDIODRIVER='dummy'
+          $env:USERPROFILE=Join-Path $env:RUNNER_TEMP 'akg-test-home'; New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          & dist/AKG-Retro-Games/AKG-Retro-Games.exe --smoke
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+          & dist/AKG-Retro-Games/AKG-Retro-Games.exe --smoke --ci-game-id 1TuDbnOzqjx3Z0WKKuc3zkRrLAR7F_pwf
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+          & dist/AKG-Retro-Games/AKG-Retro-Games.exe --smoke --ci-game-id 1RW03OkSJ_ZC4fCc2fT84rtUGwqmng0dT
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+      - name: Zip portable preview
+        shell: pwsh
+        run: |
+          'Experimental playable preview. Enter starts a game, Escape returns to menu, F5 saves and F8 loads. Not a final release.' | Out-File -Encoding utf8 dist/AKG-Retro-Games/READ-ME.txt
+          Compress-Archive -Path dist/AKG-Retro-Games -DestinationPath AKG-Retro-Games-Windows-x64-preview.zip
+          (Get-FileHash -Algorithm SHA256 AKG-Retro-Games-Windows-x64-preview.zip).Hash | Out-File -Encoding ascii SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AKG-Retro-Games-Windows-playable-preview
+          path: |
+            AKG-Retro-Games-Windows-x64-preview.zip
+            SHA256.txt
+          if-no-files-found: error
+          retention-days: 14

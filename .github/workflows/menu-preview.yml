@@ -1,0 +1,28 @@
+name: Desktop menu preview checks (windows)
+on:
+  push:
+    branches: [main]
+    paths: ['launcher.py', 'library.py', 'drive-index.json', 'tests/test_library.py', '.github/workflows/menu-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install menu runtime
+        run: python -m pip install pygame==2.6.1
+      - name: Test catalog, filtering and favourites
+        run: python -m unittest discover -s tests -v
+      - name: Render headless preview
+        shell: bash
+        run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python launcher.py --smoke --screenshot menu-preview.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: menu-preview-windows
+          path: menu-preview.png
+          if-no-files-found: error

@@ -136,6 +136,8 @@ def main():
         if not args.smoke:raise ValueError('Key verification test requires smoke mode')
         platform={'win32':'windows','darwin':'macos','linux':'linux'}.get(sys.platform)
         verify_packaged_update_key(ROOT,platform)
+        from github_update import load_version
+        load_version(ROOT)
     pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('AKG Retro Games — preview')
     pygame.display.set_icon(pygame.image.load(str(ROOT/'assets/app-icon.png')))
     preferences=read_preferences();saved_preferences=preferences.copy()

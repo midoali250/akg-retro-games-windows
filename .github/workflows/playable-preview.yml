@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: midoali250/bitvault-engine
-          ref: 2a813f6abe5cf65bac0f5e9d8b2a440b41a2028e
+          ref: 2f34737533070b4f4dad6e869524fd6c5ca1968b
           path: engine-source
           sparse-checkout: engine/desktop
       - name: Use pinned shared BitVault frontend

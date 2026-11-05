@@ -12,7 +12,7 @@ def textfit(font,text,maxwidth):
         text=text[:-1]
     return text
 
-def render(screen, games, category, query, chosen, favorites, status):
+def render(screen, games, category, query, chosen, favorites, status, about=False):
     w,h=screen.get_size();sx=w/1280;sy=h/720
     def pos(x,y):return (round(x*sx),round(y*sy))
     def rect(x,y,ww,hh):return pygame.Rect(round(x*sx),round(y*sy),max(1,round(ww*sx)),max(1,round(hh*sy)))
@@ -54,25 +54,62 @@ def render(screen, games, category, query, chosen, favorites, status):
         label(selected['system'],1005,326,(105,220,230),body)
     label('SETTINGS',1005,460,(143,165,200),body)
     pygame.draw.line(screen,(50,65,95),pos(42,637),pos(1238,637),1)
-    label('ARROWS NAVIGATE    / SEARCH    F FAVORITE    TAB FILTER    ESC CLEAR / EXIT',50,657,(151,170,199),small)
+    label('ARROWS / MOUSE    / SEARCH    F FAVORITE    TAB FILTER    I ABOUT    ESC EXIT',50,657,(151,170,199),small)
     if status:label(status,250,603,(247,190,104),small)
+    if about:
+        shade=pygame.Surface((w,h),pygame.SRCALPHA);shade.fill((2,6,18,218));screen.blit(shade,(0,0))
+        panel=rect(170,95,940,520);pygame.draw.rect(screen,(18,29,52),panel,border_radius=14);pygame.draw.rect(screen,(83,167,195),panel,width=2,border_radius=14)
+        label('DEVELOPER AND DISCLAIMER',205,122,(120,225,238),big)
+        import textwrap
+        lines=[]
+        for paragraph in (ROOT/'NOTICE.md').read_text(encoding='utf-8').splitlines():
+            lines.extend(textwrap.wrap(paragraph,width=84) or [''])
+        y=180
+        for line in lines:
+            if y>555:break
+            label(line,205,y,(211,222,240),small);y+=23
+        label('Press I or ESC to return',205,575,(113,206,224),small)
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--screenshot');args=p.parse_args()
     pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('Retro Collection — preview')
     pygame.display.set_icon(pygame.image.load(str(ROOT/'assets/app-icon.png')))
-    all_games=load_catalog(ROOT/'drive-index.json');favorites=set();cat=0;query='';chosen=0;search=False;status='Preview only: game execution is not implemented';running=True;clock=pygame.time.Clock()
+    all_games=load_catalog(ROOT/'drive-index.json');favorites=set();cat=0;query='';chosen=0;search=False;about=False; joysticks=[]; status='Preview only: game execution is not implemented';running=True;clock=pygame.time.Clock()
+    for n in range(pygame.joystick.get_count()):
+        try:
+            j=pygame.joystick.Joystick(n);j.init();joysticks.append(j)
+        except pygame.error:pass
     while running:
         games=filter_catalog(all_games,CATEGORIES[cat],query,favorites);chosen=min(chosen,max(0,len(games)-1))
         for event in pygame.event.get():
             if event.type==pygame.QUIT:running=False
+            if event.type==pygame.JOYDEVICEADDED:
+                try:
+                    j=pygame.joystick.Joystick(event.device_index);j.init();joysticks.append(j)
+                except pygame.error:pass
+            if not about and event.type==pygame.JOYHATMOTION:
+                dx,dy=event.value
+                chosen=max(0,min(max(0,len(games)-1),chosen+dx-3*dy))
+            if not about and event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
+                sw,sh=screen.get_size();mx=event.pos[0]*1280/sw;my=event.pos[1]*720/sh
+                if 38<=mx<=216:
+                    for i in range(4):
+                        if 210+i*47<=my<=247+i*47:cat=i;chosen=0
+                page=chosen//6
+                for n in range(6):
+                    x=250+(n%3)*240;y=200+(n//3)*194
+                    idx=page*6+n
+                    if x<=mx<=x+218 and y<=my<=y+172 and idx<len(games):chosen=idx
             if event.type==pygame.KEYDOWN:
-                if search:
+                if about:
+                    if event.key in (pygame.K_ESCAPE,pygame.K_i):about=False
+                elif search:
                     if event.key==pygame.K_ESCAPE:search=False;query='';chosen=0
                     elif event.key==pygame.K_RETURN:search=False
                     elif event.key==pygame.K_BACKSPACE:query=query[:-1];chosen=0
                     elif event.unicode and event.unicode.isprintable() and len(query)<60:query+=event.unicode;chosen=0
                 elif event.key==pygame.K_ESCAPE:running=False
+                elif event.key==pygame.K_i:about=True
                 elif event.key==pygame.K_SLASH:search=True;query='';chosen=0
                 elif event.key==pygame.K_TAB:cat=(cat+1)%len(CATEGORIES);chosen=0
                 elif event.key==pygame.K_RIGHT:chosen=min(chosen+1,max(0,len(games)-1))
@@ -82,7 +119,7 @@ def main():
                 elif event.key==pygame.K_f and games:
                     ident=games[chosen]['id'];favorites.symmetric_difference_update({ident})
                 elif event.key==pygame.K_RETURN:status='Preview only: game execution is not implemented'
-        render(screen,games,CATEGORIES[cat],query,chosen,favorites,status);pygame.display.flip()
+        render(screen,games,CATEGORIES[cat],query,chosen,favorites,status,about);pygame.display.flip()
         if args.screenshot:pygame.image.save(screen,args.screenshot)
         if args.smoke:running=False
         clock.tick(60)

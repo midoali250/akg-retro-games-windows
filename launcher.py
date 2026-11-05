@@ -9,6 +9,10 @@ ROOT=Path(__file__).resolve().parent
 CATEGORIES=['ALL','FAVORITES']
 THUMB_CACHE={}
 BACKGROUND_CACHE={}
+ABOUT_TEXT = ('This application has been developed by Ahmed Kamal Elgandy to serve as a digital archive and platform for running and optimizing classic retro and Atari-style games on mobile devices. The project aims to revive memories and preserve the software heritage of classic games with a smooth, lightweight experience, while fully respecting the intellectual property rights of the original production companies.')
+
+def about_button_hit(x,y):
+    return 997<=x<=1207 and 395<=y<=439
 
 def scroll_selection(chosen, wheel_y, count):
     """Scroll one row at a time without leaving the filtered game list."""
@@ -85,6 +89,8 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
         lines=selected['title'];
         for i in range(0,min(len(lines),75),25):label(textfit(body,lines[i:i+25],int(220*sx)),1005,243+i//25*24,(220,235,250),body)
         label('Press Enter to play',1005,326,(105,220,230),body)
+    pygame.draw.rect(screen,(30,62,91),rect(997,395,210,44),border_radius=8)
+    label('ABOUT  [I]',1010,406,(210,230,245),body)
     pygame.draw.rect(screen,(30,62,91),rect(997,448,210,44),border_radius=8)
     label('SETTINGS  [G]',1010,459,(210,230,245),body)
     pygame.draw.rect(screen,(30,62,91),rect(997,501,210,44),border_radius=8)
@@ -108,13 +114,13 @@ def render(screen, games, category, query, chosen, favorites, status, about=Fals
         label('DEVELOPER AND DISCLAIMER',205,122,(120,225,238),big)
         import textwrap
         lines=[]
-        for paragraph in (ROOT/'NOTICE.md').read_text(encoding='utf-8').splitlines():
+        for paragraph in [ABOUT_TEXT, '', *(ROOT/'NOTICE.md').read_text(encoding='utf-8').splitlines()]:
             lines.extend(textwrap.wrap(paragraph,width=84) or [''])
         y=180
         for line in lines:
             if y>555:break
             label(line,205,y,(211,222,240),small);y+=23
-        label('Press I or ESC to return',205,575,(113,206,224),small)
+        label('Click anywhere, or press I or ESC to return',205,575,(113,206,224),small)
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--screenshot');p.add_argument('--rom-dir',default=str(ROOT/'roms'));p.add_argument('--cores-dir',default=str(ROOT/'cores'));p.add_argument('--ci-game-id',help=argparse.SUPPRESS);args=p.parse_args()
@@ -150,11 +156,15 @@ def main():
             if not about and not settings and event.type==pygame.JOYHATMOTION:
                 dx,dy=event.value
                 chosen=max(0,min(max(0,len(games)-1),chosen+dx-3*dy))
+            if about and event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
+                about=False;continue
             if not about and event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
                 sw,sh=screen.get_size();mx=event.pos[0]*1280/sw;my=event.pos[1]*720/sh
                 if settings:
                     if 250<=mx<=1030 and 250<=my<=340:display_mode='STRETCH' if display_mode=='FIT' else 'FIT'
                     continue
+                if about_button_hit(mx,my):
+                    about=True;continue
                 if 997<=mx<=1207 and 448<=my<=492:
                     settings=True;continue
                 if 997<=mx<=1207 and 501<=my<=545:

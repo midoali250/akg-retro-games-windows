@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/midoali250/bitvault-engine",
-  "commit": "5b4e9ad66b2926426c060edaf0d0d4e1fe19f9fd",
+  "commit": "5717249232a3042bb4b5bc58bc239eafc0ee5426",
   "registry": "engine/cores/registry.json",
   "systems": [
     "NES",

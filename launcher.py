@@ -3,6 +3,7 @@ import argparse, json, math, os, random
 from pathlib import Path
 import pygame
 from library import load_catalog, filter_catalog
+from preferences import read_preferences, write_preferences
 
 ROOT=Path(__file__).resolve().parent
 CATEGORIES=['ALL','FAVORITES']
@@ -114,7 +115,8 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--smoke',action='store_true');p.add_argument('--screenshot');p.add_argument('--rom-dir',default=str(ROOT/'roms'));p.add_argument('--cores-dir',default=str(ROOT/'cores'));p.add_argument('--ci-game-id',help=argparse.SUPPRESS);args=p.parse_args()
     pygame.init();pygame.joystick.init();screen=pygame.display.set_mode((1280,720),0 if args.smoke else pygame.FULLSCREEN);pygame.display.set_caption('AKG Retro Games — preview')
     pygame.display.set_icon(pygame.image.load(str(ROOT/'assets/app-icon.png')))
-    all_games=load_catalog(ROOT/'drive-index.json');favorites=set();cat=0;query='';chosen=0;search=False;about=False;settings=False;display_mode='FIT'; joysticks=[]; status='Experimental build — game support is being tested';running=True;clock=pygame.time.Clock()
+    preferences=read_preferences();saved_preferences=preferences.copy()
+    all_games=load_catalog(ROOT/'drive-index.json');favorites=set(preferences['favorites']);cat=0;query='';chosen=0;search=False;about=False;settings=False;display_mode=preferences['display_mode']; joysticks=[]; status='Experimental build — game support is being tested';running=True;clock=pygame.time.Clock()
     if args.ci_game_id:
         if not args.smoke:raise ValueError('CI game test requires smoke mode')
         from launch_game import launch_game
@@ -185,8 +187,13 @@ def main():
                         from launch_game import launch_game
                         result=launch_game(games[chosen],screen,args.cores_dir,args.rom_dir,Path.home()/'.retro-collection'/'manual-saves',display_mode=display_mode)
                         if result=='quit':running=False
+                        preferences=read_preferences();display_mode=preferences['display_mode'];saved_preferences=preferences.copy()
                         status='Returned from game'
                     except (OSError,RuntimeError,ValueError) as err:status=str(err)[:110]
+        preferences.update({'display_mode':display_mode,'favorites':sorted(favorites)})
+        if preferences!=saved_preferences and not args.smoke:
+            try:write_preferences(preferences);saved_preferences=preferences.copy()
+            except OSError:status='Could not save settings on this device';saved_preferences=preferences.copy()
         render(screen,games,CATEGORIES[cat],query,chosen,favorites,status,about,settings,display_mode);pygame.display.flip()
         if args.screenshot:pygame.image.save(screen,args.screenshot)
         if args.smoke:running=False

@@ -3,6 +3,7 @@ import os,time,math
 from pathlib import Path
 import pygame
 from libretro_host import LibretroHost
+from preferences import read_preferences, write_preferences
 
 KEYS={pygame.K_z:0,pygame.K_a:1,pygame.K_RSHIFT:2,pygame.K_RETURN:3,
       pygame.K_UP:4,pygame.K_DOWN:5,pygame.K_LEFT:6,pygame.K_RIGHT:7,
@@ -52,7 +53,8 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
     for i in range(pygame.joystick.get_count()):
         try:j=pygame.joystick.Joystick(i);j.init();joysticks.append(j)
         except pygame.error:pass
-    count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;overlay_tested=False;overlay_changed=False;slot=0;scaling='SHARP'
+    preferences=read_preferences();scaling=preferences['scaling'];persisted_display=display_mode;persisted_scaling=scaling
+    count=0;notice='';until=0;clock=pygame.time.Clock();sound=None;menu=False;overlay_tested=False;overlay_changed=False;slot=0
     with LibretroHost(core_path,rom_path) as core:
         try:
             pygame.mixer.quit();pygame.mixer.init(frequency=int(core.sample_rate) if 8000<=core.sample_rate<=192000 else 44100,size=-16,channels=2,buffer=512);sound=pygame.mixer.Channel(0)
@@ -97,6 +99,10 @@ def run_session(screen, core_path, rom_path, state_dir, max_frames=None, test_ma
                             else:core.load_state(state);notice='Loaded manual save'
                         except (OSError,RuntimeError,ValueError) as err:notice='Save/load failed: '+str(err)[:70]
                         until=time.monotonic()+3
+            if not test_manual and (display_mode!=persisted_display or scaling!=persisted_scaling):
+                preferences.update({'display_mode':display_mode,'scaling':scaling})
+                try:write_preferences(preferences);persisted_display=display_mode;persisted_scaling=scaling
+                except OSError:notice='Could not save settings on this device';until=time.monotonic()+3;persisted_display=display_mode;persisted_scaling=scaling
             core.buttons=input_bits(joysticks) if not menu else set()
             if not menu:core.run_frame();count+=1
             if test_manual and count==3 and not overlay_tested:

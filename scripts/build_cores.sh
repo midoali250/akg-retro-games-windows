@@ -15,7 +15,7 @@ for SYSTEM in NES SNES; do
   LIB=$(find "$SRC" -type f -name "${CORE}_libretro.$EXT" -print -quit)
   test -n "$LIB"; cp "$LIB" package-cores/
   FOUND=0
-  for f in "$SRC"/LICENSE* "$SRC"/COPYING*; do
+  for f in "$SRC"/LICENSE* "$SRC"/COPYING* "$SRC"/Copying*; do
     if [ -f "$f" ]; then cp "$f" "third-party-notices/$SYSTEM-$(basename "$f")"; FOUND=1; fi
   done
   test "$FOUND" = 1
